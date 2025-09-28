@@ -66,50 +66,32 @@ def get_yandex_gpt_response(prompt: str) -> str:
 
 @app.route('/vk', methods=['POST'])
 def vk_bot():
+     # Получаем сырое тело запроса для отладки
+    raw_data = request.get_data(as_text=True)
+    print(f"📥 Raw request body: {raw_data}", file=sys.stderr)
+
     try:
         data = request.get_json()
-        if not data:
-            print("❌ Получен пустой или не-JSON запрос", file=sys.stderr)
-            return "ok", 400
+    except Exception as e:
+        print(f"❌ Не удалось распарсить JSON: {e}", file=sys.stderr)
+        return "ok", 400
 
-        print(f"📥 Получен запрос от ВК: type={data.get('type')}", file=sys.stderr)
+    if not data:
+        print("❌ Пустой JSON", file=sys.stderr)
+        return "ok", 400
 
-        # Подтверждение сервера
-        if data.get('type') == 'confirmation':
-            print(f"✅ Возвращаем строку подтверждения: {CONFIRMATION_TOKEN}", file=sys.stderr)
-            return CONFIRMATION_TOKEN  # ← просто строка, без JSON!
+    # Обработка подтверждения
+    if data.get('type') == 'confirmation':
+        print(f"✅ Подтверждение: возвращаем '{CONFIRMATION_TOKEN}'", file=sys.stderr)
+        # Важно: возвращаем ТОЛЬКО строку, без JSON, без лишних символов
+        return CONFIRMATION_TOKEN
 
-        # Обработка входящего сообщения
-        if data.get('type') == 'message_new':
-            try:
-                user_id = data['object']['message']['from_id']
-                text = data['object']['message']['text']
-                print(f"💬 Сообщение от пользователя {user_id}: {text}", file=sys.stderr)
-            except KeyError:
-                print("❌ Неверный формат сообщения от ВК", file=sys.stderr)
-                return "ok"
+    # Обработка сообщений
+    if data.get('type') == 'message_new':
+        print("📩 Обработка сообщения...", file=sys.stderr)
+        # ... (оставь твой код для ответа ИИ)
 
-            # Получаем ответ от ИИ
-            ai_response = get_yandex_gpt_response(text)
-
-            # Отправляем ответ обратно в ВК
-            vk_send_url = "https://api.vk.com/method/messages.send"
-            vk_data = {
-                "user_id": user_id,
-                "message": ai_response,
-                "random_id": 0,
-                "access_token": VK_TOKEN,
-                "v": "5.131"
-            }
-
-            try:
-                vk_resp = requests.post(vk_send_url, data=vk_data, timeout=10)
-                vk_resp.raise_for_status()
-                print(f"📤 Ответ отправлен пользователю {user_id}", file=sys.stderr)
-            except Exception as e:
-                print(f"❌ Не удалось отправить ответ в ВК: {e}", file=sys.stderr)
-
-        return "ok"
+    return "ok"
 
     except Exception as e:
         print(f"🔥 Критическая ошибка в обработчике: {e}", file=sys.stderr)
@@ -119,3 +101,4 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     print(f"🚀 Запуск сервера на порту {port}...", file=sys.stderr)
     app.run(host='0.0.0.0', port=port)
+
