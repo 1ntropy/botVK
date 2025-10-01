@@ -7,15 +7,13 @@ app = Flask(__name__)
 
 # Загружаем переменные окружения
 VK_TOKEN = os.getenv("VK_TOKEN")
-YANDEX_API_KEY = os.getenv("YANDEX_API_KEY")
-FOLDER_ID = os.getenv("FOLDER_ID")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 CONFIRMATION_TOKEN = os.getenv("VK_CONFIRMATION_TOKEN")
 
 # Проверка обязательных переменных
 required_vars = {
     "VK_TOKEN": VK_TOKEN,
-    "YANDEX_API_KEY": YANDEX_API_KEY,
-    "FOLDER_ID": FOLDER_ID,
+    "DEEPSEEK_API_KEY": DEEPSEEK_API_KEY,
     "CONFIRMATION_TOKEN": CONFIRMATION_TOKEN,
 }
 
@@ -25,34 +23,31 @@ for name, value in required_vars.items():
     else:
         print(f"✅ {name} загружен (длина: {len(value)})", file=sys.stderr)
 
-def get_yandex_gpt_response(prompt: str) -> str:
-    url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+def get_deepseek_response(prompt: str) -> str:
+    url = "https://api.deepseek.com/v1/chat/completions"
     headers = {
-        "Authorization": f"Api-Key {YANDEX_API_KEY}",
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
-        "modelUri": f"gpt://{FOLDER_ID}/yandexgpt-lite",
-        "completionOptions": {
-            "stream": False,
-            "temperature": 0.6,
-            "maxTokens": "2000"
-        },
+        "model": "deepseek-chat",
         "messages": [
-            {"role": "user", "text": prompt}
-        ]
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 1000
     }
 
     try:
-        print(f"📩 Отправляю запрос в Yandex GPT: {prompt[:50]}...", file=sys.stderr)
+        print(f"📩 Отправляю запрос в DeepSeek: {prompt[:50]}...", file=sys.stderr)
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
         result = response.json()
-        answer = result['result']['alternatives'][0]['message']['text']
-        print(f"🤖 Получен ответ от ИИ: {answer[:60]}...", file=sys.stderr)
+        answer = result['choices'][0]['message']['content']
+        print(f"🤖 Получен ответ от DeepSeek: {answer[:60]}...", file=sys.stderr)
         return answer
     except Exception as e:
-        error_msg = f"Ошибка при обращении к Yandex GPT: {e}"
+        error_msg = f"Ошибка при обращении к DeepSeek: {e}"
         print(f"❌ {error_msg}", file=sys.stderr)
         return error_msg
 
@@ -82,7 +77,8 @@ def vk_bot():
                 print("❌ Неверный формат сообщения от ВК", file=sys.stderr)
                 return "ok"
 
-            ai_response = get_yandex_gpt_response(text)
+            # ИСПРАВЛЕНО: вызываем DeepSeek, а не Yandex
+            ai_response = get_deepseek_response(text)
 
             # Отправляем ответ в ВК
             vk_send_url = "https://api.vk.com/method/messages.send"
