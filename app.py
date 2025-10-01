@@ -26,44 +26,45 @@ for name, value in required_vars.items():
         print(f"✅ {name} загружен (длина: {len(value)})", file=sys.stderr)
 
 def get_openrouter_response(prompt: str) -> str:
-    start_time = time.time()
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "mistralai/mistral-7b-instruct:free",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.7,
-        "max_tokens": 800
-    }
+    # Улучшаем промпт для стабильности
+    improved_prompt = f"Ответь на русском языке кратко и понятно: {prompt}"
+    
+    for attempt in range(2):  # До 2 попыток
+        start_time = time.time()
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "google/gemma-7b-it:free",  # Более стабильная модель
+            "messages": [
+                {"role": "user", "content": improved_prompt}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 800
+        }
 
-    try:
-        print(f"📩 Отправляю запрос в OpenRouter (Mistral): {prompt[:50]}...", file=sys.stderr)
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
-        response.raise_for_status()
-        result = response.json()
-        
-        if 'choices' not in result or len(result['choices']) == 0:
-            raise ValueError("Пустой ответ от модели")
+        try:
+            print(f"📩 Попытка {attempt + 1}: {improved_prompt[:50]}...", file=sys.stderr)
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            result = response.json()
             
-        answer = result['choices'][0]['message']['content']
-        answer = answer.strip()
+            if 'choices' in result and result['choices']:
+                answer = result['choices'][0]['message']['content'].strip()
+                if answer:
+                    duration = time.time() - start_time
+                    print(f"🤖 Успешно за {duration:.2f} сек: {answer[:60]}...", file=sys.stderr)
+                    return answer
+                    
+        except Exception as e:
+            print(f"❌ Ошибка попытки {attempt + 1}: {e}", file=sys.stderr)
         
-        if not answer:
-            raise ValueError("Пустой ответ после очистки")
-            
-        duration = time.time() - start_time
-        print(f"🤖 Ответ от Mistral за {duration:.2f} сек: {answer[:60]}...", file=sys.stderr)
-        return answer
-        
-    except Exception as e:
-        error_msg = f"Ошибка OpenRouter: {e}"
-        print(f"❌ {error_msg}", file=sys.stderr)
-        return "Извините, сейчас не могу ответить. Попробуйте позже."
+        if attempt == 0:
+            time.sleep(1)
+
+    return "Извините, не удалось сформулировать ответ. Попробуйте задать вопрос иначе."
 
 @app.route('/vk', methods=['GET', 'POST'])
 def vk_bot():
@@ -144,3 +145,4 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     print(f"🚀 Запуск сервера на порту {port}...", file=sys.stderr)
     app.run(host='0.0.0.0', port=port)
+
