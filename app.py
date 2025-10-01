@@ -26,10 +26,13 @@ for name, value in required_vars.items():
         print(f"✅ {name} загружен (длина: {len(value)})", file=sys.stderr)
 
 def get_openrouter_response(prompt: str) -> str:
-    # Улучшаем промпт для стабильности
-    improved_prompt = f"Ответь на русском языке кратко и понятно: {prompt}"
+    # 🔥 Улучшенный промпт для борьбы с "пробелами"
+    improved_prompt = (
+        "Ты — полезный ИИ-ассистент. Ответь на русском языке чётко, по делу и без лишних символов. "
+        "Не отправляй пустые сообщения. Всегда пиши полный ответ. Вопрос: " + prompt
+    )
     
-    for attempt in range(2):  # До 2 попыток
+    for attempt in range(3):  # До 3 попыток
         start_time = time.time()
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
@@ -37,33 +40,36 @@ def get_openrouter_response(prompt: str) -> str:
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "google/gemma-7b-it:free",  # Более стабильная модель
+            "model": "mistralai/mistral-7b-instruct:free",
             "messages": [
                 {"role": "user", "content": improved_prompt}
             ],
-            "temperature": 0.7,
+            "temperature": 0.6,  # немного ниже для стабильности
             "max_tokens": 800
         }
 
         try:
-            print(f"📩 Попытка {attempt + 1}: {improved_prompt[:50]}...", file=sys.stderr)
+            print(f"📩 Попытка {attempt + 1}: {prompt[:40]}...", file=sys.stderr)
             response = requests.post(url, headers=headers, json=payload, timeout=30)
             response.raise_for_status()
             result = response.json()
             
             if 'choices' in result and result['choices']:
-                answer = result['choices'][0]['message']['content'].strip()
-                if answer:
+                answer = result['choices'][0]['message']['content']
+                # Убираем пробелы и проверяем
+                clean_answer = answer.strip()
+                if len(clean_answer) > 2:  # Минимум 3 символа
                     duration = time.time() - start_time
-                    print(f"🤖 Успешно за {duration:.2f} сек: {answer[:60]}...", file=sys.stderr)
-                    return answer
+                    print(f"🤖 Успешно за {duration:.2f} сек: {clean_answer[:60]}...", file=sys.stderr)
+                    return clean_answer
                     
         except Exception as e:
-            print(f"❌ Ошибка попытки {attempt + 1}: {e}", file=sys.stderr)
+            print(f"❌ Ошибка: {e}", file=sys.stderr)
         
-        if attempt == 0:
-            time.sleep(1)
+        if attempt < 2:
+            time.sleep(1.5)  # Пауза перед повтором
 
+    # Запасной ответ
     return "Извините, не удалось сформулировать ответ. Попробуйте задать вопрос иначе."
 
 @app.route('/vk', methods=['GET', 'POST'])
@@ -145,4 +151,5 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     print(f"🚀 Запуск сервера на порту {port}...", file=sys.stderr)
     app.run(host='0.0.0.0', port=port)
+
 
