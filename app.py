@@ -2,6 +2,8 @@ from flask import Flask, request
 import requests
 import os
 import sys
+import time
+import random
 
 app = Flask(__name__)
 
@@ -24,6 +26,7 @@ for name, value in required_vars.items():
         print(f"✅ {name} загружен (длина: {len(value)})", file=sys.stderr)
 
 def get_openrouter_response(prompt: str) -> str:
+    start_time = time.time()
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -44,15 +47,20 @@ def get_openrouter_response(prompt: str) -> str:
         response.raise_for_status()
         result = response.json()
         answer = result['choices'][0]['message']['content']
-        print(f"🤖 Получен ответ от Mistral: {answer[:60]}...", file=sys.stderr)
+        duration = time.time() - start_time
+        print(f"🤖 Ответ от Mistral за {duration:.2f} сек: {answer[:60]}...", file=sys.stderr)
         return answer
     except Exception as e:
         error_msg = f"Ошибка OpenRouter: {e}"
         print(f"❌ {error_msg}", file=sys.stderr)
-        return error_msg
+        return "Извините, сейчас не могу ответить. Попробуйте позже."
 
-@app.route('/vk', methods=['POST'])
+@app.route('/vk', methods=['GET', 'POST'])
 def vk_bot():
+    # Поддержка GET для UptimeRobot
+    if request.method == 'GET':
+        return "OK", 200
+
     try:
         data = request.get_json()
         if data is None:
@@ -74,21 +82,39 @@ def vk_bot():
                 print("❌ Неверный формат сообщения от ВК", file=sys.stderr)
                 return "ok"
 
+            # Небольшая задержка для стабильности
+            time.sleep(0.3)
+
             ai_response = get_openrouter_response(text)
 
-            # Отправка в ВК
-            requests.post(
-                "https://api.vk.com/method/messages.send",
-                data={
-                    "user_id": user_id,
-                    "message": ai_response,
-                    "random_id": 0,
-                    "access_token": VK_TOKEN,
-                    "v": "5.131"
-                },
-                timeout=10
-            )
-            print(f"📤 Ответ отправлен пользователю {user_id}", file=sys.stderr)
+            # Генерируем уникальный random_id
+            random_id = random.randint(1, 2**31 - 1)
+
+            # Отправка в ВК с проверкой
+            try:
+                vk_resp = requests.post(
+                    "https://api.vk.com/method/messages.send",
+                    data={
+                        "user_id": user_id,
+                        "message": ai_response,
+                        "random_id": random_id,
+                        "access_token": VK_TOKEN,
+                        "v": "5.131"
+                    },
+                    timeout=10
+                )
+                vk_resp.raise_for_status()
+                result = vk_resp.json()
+
+                if 'error' in result:
+                    error_code = result['error']['error_code']
+                    error_msg = result['error']['error_msg']
+                    print(f"❌ Ошибка ВК: [{error_code}] {error_msg}", file=sys.stderr)
+                else:
+                    print(f"✅ Сообщение доставлено пользователю {user_id} (ID: {result.get('response', 'N/A')})", file=sys.stderr)
+
+            except Exception as e:
+                print(f"❌ Ошибка отправки в ВК: {e}", file=sys.stderr)
 
         return "ok"
 
