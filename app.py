@@ -38,7 +38,7 @@ def get_openrouter_response(prompt: str) -> str:
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.7,
-        "max_tokens": 1000
+        "max_tokens": 800
     }
 
     try:
@@ -46,10 +46,20 @@ def get_openrouter_response(prompt: str) -> str:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
         result = response.json()
+        
+        if 'choices' not in result or len(result['choices']) == 0:
+            raise ValueError("Пустой ответ от модели")
+            
         answer = result['choices'][0]['message']['content']
+        answer = answer.strip()
+        
+        if not answer:
+            raise ValueError("Пустой ответ после очистки")
+            
         duration = time.time() - start_time
         print(f"🤖 Ответ от Mistral за {duration:.2f} сек: {answer[:60]}...", file=sys.stderr)
         return answer
+        
     except Exception as e:
         error_msg = f"Ошибка OpenRouter: {e}"
         print(f"❌ {error_msg}", file=sys.stderr)
@@ -87,10 +97,17 @@ def vk_bot():
 
             ai_response = get_openrouter_response(text)
 
+            # 🔒 ГАРАНТИЯ: сообщение не пустое и не слишком длинное
+            if not ai_response or not ai_response.strip():
+                ai_response = "Извините, я не могу сформулировать ответ. Попробуйте задать вопрос иначе."
+
+            if len(ai_response) > 3900:
+                ai_response = ai_response[:3900] + "..."
+
             # Генерируем уникальный random_id
             random_id = random.randint(1, 2**31 - 1)
 
-            # Отправка в ВК с проверкой
+            # Отправка в ВК
             try:
                 vk_resp = requests.post(
                     "https://api.vk.com/method/messages.send",
@@ -111,7 +128,8 @@ def vk_bot():
                     error_msg = result['error']['error_msg']
                     print(f"❌ Ошибка ВК: [{error_code}] {error_msg}", file=sys.stderr)
                 else:
-                    print(f"✅ Сообщение доставлено пользователю {user_id} (ID: {result.get('response', 'N/A')})", file=sys.stderr)
+                    msg_id = result.get('response', 'N/A')
+                    print(f"✅ Сообщение доставлено пользователю {user_id} (ID: {msg_id})", file=sys.stderr)
 
             except Exception as e:
                 print(f"❌ Ошибка отправки в ВК: {e}", file=sys.stderr)
