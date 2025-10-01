@@ -7,13 +7,13 @@ app = Flask(__name__)
 
 # Загружаем переменные окружения
 VK_TOKEN = os.getenv("VK_TOKEN")
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 CONFIRMATION_TOKEN = os.getenv("VK_CONFIRMATION_TOKEN")
 
 # Проверка обязательных переменных
 required_vars = {
     "VK_TOKEN": VK_TOKEN,
-    "DEEPSEEK_API_KEY": DEEPSEEK_API_KEY,
+    "OPENROUTER_API_KEY": OPENROUTER_API_KEY,
     "CONFIRMATION_TOKEN": CONFIRMATION_TOKEN,
 }
 
@@ -23,14 +23,14 @@ for name, value in required_vars.items():
     else:
         print(f"✅ {name} загружен (длина: {len(value)})", file=sys.stderr)
 
-def get_deepseek_response(prompt: str) -> str:
-    url = "https://api.deepseek.com/v1/chat/completions"
+def get_openrouter_response(prompt: str) -> str:
+    url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "deepseek-chat",
+        "model": "mistralai/mistral-7b-instruct:free",
         "messages": [
             {"role": "user", "content": prompt}
         ],
@@ -39,22 +39,21 @@ def get_deepseek_response(prompt: str) -> str:
     }
 
     try:
-        print(f"📩 Отправляю запрос в DeepSeek: {prompt[:50]}...", file=sys.stderr)
+        print(f"📩 Отправляю запрос в OpenRouter (Mistral): {prompt[:50]}...", file=sys.stderr)
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
         result = response.json()
         answer = result['choices'][0]['message']['content']
-        print(f"🤖 Получен ответ от DeepSeek: {answer[:60]}...", file=sys.stderr)
+        print(f"🤖 Получен ответ от Mistral: {answer[:60]}...", file=sys.stderr)
         return answer
     except Exception as e:
-        error_msg = f"Ошибка при обращении к DeepSeek: {e}"
+        error_msg = f"Ошибка OpenRouter: {e}"
         print(f"❌ {error_msg}", file=sys.stderr)
         return error_msg
 
 @app.route('/vk', methods=['POST'])
 def vk_bot():
     try:
-        # Получаем JSON
         data = request.get_json()
         if data is None:
             print("❌ Получен пустой или не-JSON запрос", file=sys.stderr)
@@ -62,12 +61,10 @@ def vk_bot():
 
         print(f"📥 Получен запрос от ВК: type={data.get('type')}", file=sys.stderr)
 
-        # Подтверждение сервера
         if data.get('type') == 'confirmation':
             print(f"✅ Возвращаем строку подтверждения: {CONFIRMATION_TOKEN}", file=sys.stderr)
-            return CONFIRMATION_TOKEN  # ← просто строка!
+            return CONFIRMATION_TOKEN
 
-        # Обработка сообщения
         if data.get('type') == 'message_new':
             try:
                 user_id = data['object']['message']['from_id']
@@ -77,30 +74,26 @@ def vk_bot():
                 print("❌ Неверный формат сообщения от ВК", file=sys.stderr)
                 return "ok"
 
-            # ИСПРАВЛЕНО: вызываем DeepSeek, а не Yandex
-            ai_response = get_deepseek_response(text)
+            ai_response = get_openrouter_response(text)
 
-            # Отправляем ответ в ВК
-            vk_send_url = "https://api.vk.com/method/messages.send"
-            vk_data = {
-                "user_id": user_id,
-                "message": ai_response,
-                "random_id": 0,
-                "access_token": VK_TOKEN,
-                "v": "5.131"
-            }
-
-            try:
-                vk_resp = requests.post(vk_send_url, data=vk_data, timeout=10)
-                vk_resp.raise_for_status()
-                print(f"📤 Ответ отправлен пользователю {user_id}", file=sys.stderr)
-            except Exception as e:
-                print(f"❌ Не удалось отправить ответ в ВК: {e}", file=sys.stderr)
+            # Отправка в ВК
+            requests.post(
+                "https://api.vk.com/method/messages.send",
+                data={
+                    "user_id": user_id,
+                    "message": ai_response,
+                    "random_id": 0,
+                    "access_token": VK_TOKEN,
+                    "v": "5.131"
+                },
+                timeout=10
+            )
+            print(f"📤 Ответ отправлен пользователю {user_id}", file=sys.stderr)
 
         return "ok"
 
     except Exception as e:
-        print(f"🔥 Критическая ошибка в обработчике: {e}", file=sys.stderr)
+        print(f"🔥 Критическая ошибка: {e}", file=sys.stderr)
         return "ok"
 
 if __name__ == '__main__':
